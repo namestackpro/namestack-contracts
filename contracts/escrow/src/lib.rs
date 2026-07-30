@@ -145,6 +145,36 @@ impl EscrowContract {
         Ok(())
     }
 
+    pub fn raise_dispute(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id))
+            .ok_or(Error::EscrowNotFound)?;
+
+        caller.require_auth();
+
+        if caller != escrow.buyer && caller != escrow.seller {
+            return Err(Error::Unauthorized);
+        }
+
+        if escrow.status != EscrowStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+
+        escrow.status = EscrowStatus::Disputed;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(escrow_id), &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+        events::dispute_raised(&env, escrow_id, &caller);
+
+        Ok(())
+    }
+
     fn amount_to_fee(amount: i128, fee_bps: u32) -> Result<i128, Error> {
         amount
             .checked_mul(fee_bps as i128)
