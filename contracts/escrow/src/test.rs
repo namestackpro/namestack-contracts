@@ -112,3 +112,72 @@ fn test_create_escrow_insufficient_balance_fails() {
     );
     assert!(result.is_err());
 }
+
+#[test]
+fn test_confirm_receipt_happy() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    client.confirm_receipt(&escrow_id);
+
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&contract_id), 0);
+    assert_eq!(token_client.balance(&seller), 975);
+    assert_eq!(token_client.balance(&fee_address), 25);
+}
+
+#[test]
+fn test_confirm_receipt_double_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    client.confirm_receipt(&escrow_id);
+    let result = client.try_confirm_receipt(&escrow_id);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_confirm_receipt_wrong_buyer_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let _escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    let wrong_buyer = Address::generate(&env);
+    env.mock_all_auths();
+    sac.mint(&wrong_buyer, &1000);
+}
