@@ -175,6 +175,91 @@ impl EscrowContract {
         Ok(())
     }
 
+    pub fn resolve_dispute(env: Env, escrow_id: u64, release_to: Address) -> Result<(), Error> {
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id))
+            .ok_or(Error::EscrowNotFound)?;
+
+        let arbitrator: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .ok_or(Error::NotInitialized)?;
+        arbitrator.require_auth();
+
+        if escrow.status != EscrowStatus::Disputed {
+            return Err(Error::InvalidStatus);
+        }
+
+        if release_to != escrow.buyer && release_to != escrow.seller {
+            return Err(Error::InvalidReleaseTarget);
+        }
+
+        if release_to == escrow.seller {
+            let fee_bps: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::FeeBps)
+                .unwrap_or(0);
+            let fee_address: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::FeeAddress)
+                .unwrap();
+
+            let fee_amount = Self::amount_to_fee(escrow.amount, fee_bps)?;
+            let seller_amount = escrow
+                .amount
+                .checked_sub(fee_amount)
+                .ok_or(Error::Overflow)?;
+
+            let token_client = TokenClient::new(&env, &escrow.token);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &fee_address,
+                &fee_amount,
+            );
+            token_client.transfer(
+                &env.current_contract_address(),
+                &escrow.seller,
+                &seller_amount,
+            );
+
+            escrow.status = EscrowStatus::Released;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Escrow(escrow_id), &escrow);
+            env.storage()
+                .persistent()
+                .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+            events::escrow_released(&env, escrow_id, &escrow.seller, seller_amount, fee_amount);
+            events::dispute_resolved(&env, escrow_id, &release_to, EscrowStatus::Released);
+        } else {
+            let token_client = TokenClient::new(&env, &escrow.token);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &escrow.buyer,
+                &escrow.amount,
+            );
+
+            escrow.status = EscrowStatus::Refunded;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Escrow(escrow_id), &escrow);
+            env.storage()
+                .persistent()
+                .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+            events::escrow_refunded(&env, escrow_id, &escrow.buyer, escrow.amount);
+            events::dispute_resolved(&env, escrow_id, &release_to, EscrowStatus::Refunded);
+        }
+
+        Ok(())
+    }
+
     fn amount_to_fee(amount: i128, fee_bps: u32) -> Result<i128, Error> {
         amount
             .checked_mul(fee_bps as i128)
