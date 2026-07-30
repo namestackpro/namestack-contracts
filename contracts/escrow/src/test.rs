@@ -393,3 +393,49 @@ fn test_resolve_dispute_not_disputed_fails() {
     let result = client.try_resolve_dispute(&escrow_id, &buyer);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_set_fee_happy() {
+    let (env, contract_id, _admin, _arbitrator, _buyer, _seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let new_fee_address = Address::generate(&env);
+    client.set_fee(&500, &new_fee_address);
+}
+
+#[test]
+fn test_set_fee_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let fee_address = Address::generate(&env);
+
+    let contract_id = env.register(EscrowContract, ());
+    let client = EscrowContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &arbitrator, &fee_address, &250);
+}
+
+#[test]
+fn test_set_arbitrator_happy() {
+    let (env, contract_id, _admin, _arbitrator, _buyer, _seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let new_arbitrator = Address::generate(&env);
+    client.set_arbitrator(&new_arbitrator);
+}
+
+#[test]
+fn test_set_arbitrator_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let fee_address = Address::generate(&env);
+
+    let contract_id = env.register(EscrowContract, ());
+    let client = EscrowContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &arbitrator, &fee_address, &250);
+}
