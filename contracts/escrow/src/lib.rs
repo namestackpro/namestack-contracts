@@ -260,6 +260,39 @@ impl EscrowContract {
         Ok(())
     }
 
+    pub fn set_fee(env: Env, fee_bps: u32, fee_address: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeBps, &fee_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeAddress, &fee_address);
+
+        Ok(())
+    }
+
+    pub fn set_arbitrator(env: Env, new_arbitrator: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Arbitrator, &new_arbitrator);
+
+        Ok(())
+    }
+
     fn amount_to_fee(amount: i128, fee_bps: u32) -> Result<i128, Error> {
         amount
             .checked_mul(fee_bps as i128)
