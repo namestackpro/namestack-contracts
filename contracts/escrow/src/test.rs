@@ -3,7 +3,32 @@
 
 use crate::{EscrowContract, EscrowContractClient};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{token, Address, Env, String};
+
+fn setup_test() -> (Env, Address, Address, Address, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let seller = Address::generate(&env);
+    let fee_address = Address::generate(&env);
+
+    let contract_id = env.register(EscrowContract, ());
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    client.initialize(&admin, &arbitrator, &fee_address, &250);
+
+    (env, contract_id, admin, arbitrator, buyer, seller, fee_address)
+}
+
+fn create_token(env: &Env, admin: &Address) -> Address {
+    let token = env.register_stellar_asset_contract(admin.clone());
+    let sac = token::StellarAssetClient::new(env, &token);
+    sac.mint(admin, &i128::MAX);
+    token
+}
 
 #[test]
 fn test_initialize_happy() {
@@ -49,5 +74,41 @@ fn test_initialize_no_auth_fails() {
     let client = EscrowContractClient::new(&env, &contract_id);
 
     let result = client.try_initialize(&admin, &arbitrator, &fee_address, &250);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_escrow_happy() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+    assert_eq!(escrow_id, 1);
+}
+
+#[test]
+fn test_create_escrow_insufficient_balance_fails() {
+    let (env, contract_id, _admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let token = Address::generate(&env);
+
+    let result = client.try_create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
     assert!(result.is_err());
 }
