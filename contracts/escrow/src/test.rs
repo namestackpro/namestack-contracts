@@ -181,3 +181,87 @@ fn test_confirm_receipt_wrong_buyer_fails() {
     env.mock_all_auths();
     sac.mint(&wrong_buyer, &1000);
 }
+
+#[test]
+fn test_raise_dispute_by_buyer() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    client.raise_dispute(&escrow_id, &buyer);
+}
+
+#[test]
+fn test_raise_dispute_by_seller() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    client.raise_dispute(&escrow_id, &seller);
+}
+
+#[test]
+fn test_raise_dispute_unrelated_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    let stranger = Address::generate(&env);
+    let result = client.try_raise_dispute(&escrow_id, &stranger);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_raise_dispute_wrong_status_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let escrow_id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+
+    client.confirm_receipt(&escrow_id);
+    let result = client.try_raise_dispute(&escrow_id, &buyer);
+    assert!(result.is_err());
+}
