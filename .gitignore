@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+node_modules/
+.env
+*.swp
+*.swo
+.DS_Store
+**/test_snapshots/
