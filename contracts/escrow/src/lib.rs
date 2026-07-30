@@ -4,6 +4,9 @@ pub(crate) mod errors;
 pub(crate) mod events;
 pub(crate) mod types;
 
+#[cfg(test)]
+mod test;
+
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, Address, Env};
 use types::DataKey;
