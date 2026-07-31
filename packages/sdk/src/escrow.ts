@@ -286,3 +286,85 @@ export async function resolveDispute(
     config.networkPassphrase,
   );
 }
+
+// ── Read function ─────────────────────────────────────────────
+
+const ESCROW_STATUS_BY_CODE: readonly EscrowStatus[] = [
+  "Funded",
+  "Disputed",
+  "Released",
+  "Refunded",
+];
+
+function escrowStatusFromU32(code: number): EscrowStatus {
+  return ESCROW_STATUS_BY_CODE[code] ?? "Funded";
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : value === undefined ? "" : String(value);
+}
+
+function asNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  return typeof value === "bigint" ? Number(value) : 0;
+}
+
+export async function getEscrow(
+  server: rpc.Server,
+  contractId: string,
+  escrowId: bigint,
+): Promise<EscrowData> {
+  const contract = nativeToScVal(contractId, { type: "address" }).address();
+  const key = xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol("Escrow"),
+    nativeToScVal(escrowId, { type: "u64" }),
+  ]);
+
+  const ledgerKey = xdr.LedgerKey.contractData(
+    new xdr.LedgerKeyContractData({
+      contract,
+      key,
+      durability: xdr.ContractDataDurability.persistent(),
+    }),
+  );
+
+  const response = await server.getLedgerEntries(ledgerKey);
+  if (!response.entries || response.entries.length === 0) {
+    throw new EscrowError(
+      "simulate",
+      "Escrow not found on ledger",
+      `escrow_id: ${escrowId.toString()}`,
+    );
+  }
+
+  return parseEscrowData(response.entries[0].val.contractData().val());
+}
+
+function parseEscrowData(scVal: xdr.ScVal): EscrowData {
+  const entries = scVal.map() ?? [];
+  const get = (name: string): unknown => {
+    for (const entry of entries) {
+      if (
+        entry.key().switch() === xdr.ScValType.scvSymbol() &&
+        entry.key().sym().toString() === name
+      ) {
+        return scValToNative(entry.val());
+      }
+    }
+    return undefined;
+  };
+
+  const amount = get("amount");
+  const status = get("status");
+  const createdLedger = get("created_ledger");
+
+  return {
+    buyer: asString(get("buyer")),
+    seller: asString(get("seller")),
+    token: asString(get("token")),
+    amount: typeof amount === "bigint" ? amount : BigInt(asNumber(amount)),
+    domainRef: asString(get("domain_ref")),
+    status: escrowStatusFromU32(asNumber(status)),
+    createdLedger: asNumber(createdLedger),
+  };
+}
