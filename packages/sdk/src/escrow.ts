@@ -225,3 +225,21 @@ export async function createEscrow(
   const value = scValToNative(result.returnValue);
   return typeof value === "bigint" ? value : BigInt(value as number);
 }
+
+export async function confirmReceipt(
+  server: rpc.Server,
+  buyerPublicKey: string,
+  escrowId: bigint,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<void> {
+  const config = getNetworkConfig();
+  await buildAndSendTx(
+    server,
+    config.escrowContractId,
+    buyerPublicKey,
+    "confirm_receipt",
+    [nativeToScVal(escrowId, { type: "u64" })],
+    signTransaction,
+    config.networkPassphrase,
+  );
+}
