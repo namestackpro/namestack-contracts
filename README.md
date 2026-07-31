@@ -39,4 +39,4 @@ stellar contract invoke \
   --fee_bps <FEE_BPS>
 ```
 
-> **Note:** Before deploying to testnet or mainnet, replace the `PLACEHOLDER_USDC_CONTRACT_ID` constant in the contract code with the verified real USDC SAC address for the target network.
+> **Note:** Before deploying to testnet or mainnet, replace the `PLACEHOLDER_USDC_CONTRACT_ID` constant in the contract code with the verified real USDC SAC address for the target network (testnet USDC SAC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`).
