@@ -243,3 +243,24 @@ export async function confirmReceipt(
     config.networkPassphrase,
   );
 }
+
+export async function raiseDispute(
+  server: rpc.Server,
+  callerPublicKey: string,
+  escrowId: bigint,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<void> {
+  const config = getNetworkConfig();
+  await buildAndSendTx(
+    server,
+    config.escrowContractId,
+    callerPublicKey,
+    "raise_dispute",
+    [
+      nativeToScVal(escrowId, { type: "u64" }),
+      nativeToScVal(callerPublicKey, { type: "address" }),
+    ],
+    signTransaction,
+    config.networkPassphrase,
+  );
+}
