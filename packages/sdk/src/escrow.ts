@@ -264,3 +264,25 @@ export async function raiseDispute(
     config.networkPassphrase,
   );
 }
+
+export async function resolveDispute(
+  server: rpc.Server,
+  arbitratorPublicKey: string,
+  escrowId: bigint,
+  releaseTo: string,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<void> {
+  const config = getNetworkConfig();
+  await buildAndSendTx(
+    server,
+    config.escrowContractId,
+    arbitratorPublicKey,
+    "resolve_dispute",
+    [
+      nativeToScVal(escrowId, { type: "u64" }),
+      nativeToScVal(releaseTo, { type: "address" }),
+    ],
+    signTransaction,
+    config.networkPassphrase,
+  );
+}
