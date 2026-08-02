@@ -1,6 +1,7 @@
 #![cfg(test)]
 #![allow(deprecated)]
 
+use crate::types::{Escrow, EscrowStatus};
 use crate::{EscrowContract, EscrowContractClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{token, Address, Env, String};
@@ -94,6 +95,40 @@ fn test_create_escrow_happy() {
         &String::from_str(&env, "example.stellar"),
     );
     assert_eq!(escrow_id, 1);
+}
+
+#[test]
+fn test_get_escrow_happy() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let sac = token::StellarAssetClient::new(&env, &token);
+    sac.mint(&buyer, &1000);
+
+    let domain_ref = String::from_str(&env, "example.stellar");
+    let escrow_id = client.create_escrow(&buyer, &seller, &token, &1000, &domain_ref);
+
+    let escrow = client.get_escrow(&escrow_id);
+    let expected = Escrow {
+        buyer: buyer.clone(),
+        seller: seller.clone(),
+        token: token.clone(),
+        amount: 1000,
+        domain_ref,
+        status: EscrowStatus::Funded,
+        created_ledger: env.ledger().sequence(),
+    };
+    assert_eq!(escrow, expected);
+}
+
+#[test]
+fn test_get_escrow_not_found() {
+    let (env, contract_id, _admin, _arbitrator, _buyer, _seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let result = client.try_get_escrow(&999);
+    assert_eq!(result, Err(Ok(crate::errors::Error::EscrowNotFound)));
 }
 
 #[test]

@@ -94,6 +94,13 @@ impl EscrowContract {
         Ok(escrow_id)
     }
 
+    pub fn get_escrow(env: Env, escrow_id: u64) -> Result<Escrow, Error> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id))
+            .ok_or(Error::EscrowNotFound)
+    }
+
     pub fn confirm_receipt(env: Env, escrow_id: u64) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()
