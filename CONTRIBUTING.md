@@ -1,4 +1,4 @@
-[Contributing to namestack-contracts
+Contributing to namestack-contracts
 
 Thanks for your interest in contributing. This repo contains the Soroban smart contracts powering NameStack's domain escrow marketplace on Stellar.
 
@@ -26,4 +26,4 @@ No floating-point math — all amounts are i128, fee math uses basis points with
 Every fallible function returns Result<T, Error>, using the Error enum defined in errors.rs — no bare panic!() for expected error conditions.
 Questions
 
-Open an issue, or reach out on Discord: ciscokwiz.]
+Open an issue, or reach out on Discord: ciscokwiz.

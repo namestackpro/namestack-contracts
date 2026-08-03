@@ -1,4 +1,4 @@
-[Security Policy
+Security Policy
 Audit status
 
 This contract has not undergone a third-party security audit. It has been tested against Stellar testnet with real transactions (create, confirm, dispute, and resolve flows), but no formal audit has been performed. Use on mainnet with real funds is at your own risk until an audit is completed.
@@ -23,4 +23,4 @@ We'll acknowledge reports within a reasonable timeframe and keep you updated as 
 
 Supported versions
 
-Only the contract currently deployed on Stellar testnet (see the latest release tag for the exact contract address) is actively maintained. Older deployed versions are not patched — a new version is deployed and initialized instead.]
+Only the contract currently deployed on Stellar testnet (see the latest release tag for the exact contract address) is actively maintained. Older deployed versions are not patched — a new version is deployed and initialized instead.
