@@ -6,16 +6,28 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build-and-test:
+  test:
+    name: Build and test contracts
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: stellar/stellar-cli@v26
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          version: "26.1.0"
-      - run: stellar contract build
-      - run: cargo test
+          targets: wasm32v1-none
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      - name: Run tests
+        run: cd contracts/escrow && cargo test
+
+      - name: Build contract
+        run: stellar contract build
