@@ -20,6 +20,19 @@ pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
+    /// Initialize contract configuration (admin, arbitrator, fee settings).
+    ///
+    /// # Auth
+    /// Requires `admin` authentication.
+    ///
+    /// # Parameters
+    /// * `admin` — administrator for fee/arbitrator updates
+    /// * `arbitrator` — authorized dispute resolver
+    /// * `fee_address` — receives protocol fees on release to seller
+    /// * `fee_bps` — fee in basis points (`10_000` = 100%)
+    ///
+    /// # Errors
+    /// * [`Error::AlreadyInitialized`] if instance admin storage is already set
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -47,6 +60,20 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Create a funded escrow: pull `amount` of `token` from `buyer` into the contract.
+    ///
+    /// # Auth
+    /// Requires `buyer` authentication (token transfer source).
+    ///
+    /// # Parameters
+    /// * `buyer` — funds the escrow
+    /// * `seller` — counterparty who receives funds on release
+    /// * `token` — SAC/token contract address
+    /// * `amount` — token amount in the token's smallest unit
+    /// * `domain_ref` — off-chain reference (e.g. domain name / order id)
+    ///
+    /// # Returns
+    /// New monotonic escrow id.
     pub fn create_escrow(
         env: Env,
         buyer: Address,
@@ -94,6 +121,13 @@ impl EscrowContract {
         Ok(escrow_id)
     }
 
+    /// Fetch escrow state by id.
+    ///
+    /// # Auth
+    /// None (read-only).
+    ///
+    /// # Errors
+    /// * [`Error::EscrowNotFound`] if the id is unknown
     pub fn get_escrow(env: Env, escrow_id: u64) -> Result<Escrow, Error> {
         env.storage()
             .persistent()
@@ -101,6 +135,15 @@ impl EscrowContract {
             .ok_or(Error::EscrowNotFound)
     }
 
+    /// Buyer confirms receipt: release funds to seller (minus fee) and mark Released.
+    ///
+    /// # Auth
+    /// Requires the escrow `buyer` authentication.
+    ///
+    /// # Errors
+    /// * [`Error::EscrowNotFound`]
+    /// * [`Error::InvalidStatus`] unless status is `Funded`
+    /// * [`Error::Overflow`] on fee math
     pub fn confirm_receipt(env: Env, escrow_id: u64) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()
@@ -152,6 +195,15 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Buyer or seller raises a dispute on a funded escrow.
+    ///
+    /// # Auth
+    /// Requires `caller` authentication; `caller` must be the buyer or seller.
+    ///
+    /// # Errors
+    /// * [`Error::EscrowNotFound`]
+    /// * [`Error::Unauthorized`] if caller is neither party
+    /// * [`Error::InvalidStatus`] unless status is `Funded`
     pub fn raise_dispute(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()
@@ -182,6 +234,18 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Arbitrator resolves a disputed escrow by releasing to seller or refunding buyer.
+    ///
+    /// # Auth
+    /// Requires the configured `arbitrator` authentication.
+    ///
+    /// # Parameters
+    /// * `release_to` — must be the escrow buyer (full refund) or seller (release minus fee)
+    ///
+    /// # Errors
+    /// * [`Error::EscrowNotFound`] / [`Error::NotInitialized`]
+    /// * [`Error::InvalidStatus`] unless status is `Disputed`
+    /// * [`Error::InvalidReleaseTarget`] if `release_to` is neither party
     pub fn resolve_dispute(env: Env, escrow_id: u64, release_to: Address) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()
@@ -267,6 +331,10 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Update protocol fee basis points and fee recipient.
+    ///
+    /// # Auth
+    /// Requires current `admin` authentication.
     pub fn set_fee(env: Env, fee_bps: u32, fee_address: Address) -> Result<(), Error> {
         let admin: Address = env
             .storage()
@@ -285,6 +353,10 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Replace the dispute arbitrator address.
+    ///
+    /// # Auth
+    /// Requires current `admin` authentication.
     pub fn set_arbitrator(env: Env, new_arbitrator: Address) -> Result<(), Error> {
         let admin: Address = env
             .storage()
