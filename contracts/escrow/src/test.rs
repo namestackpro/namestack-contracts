@@ -590,3 +590,42 @@ fn test_config_getters_uninitialized_fail() {
     assert_eq!(client.try_get_arbitrator().map(|_| ()), not_init);
     assert_eq!(client.try_get_fee_config().map(|_| ()), not_init);
 }
+
+#[test]
+fn test_pause_blocks_creation_only() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+    token::StellarAssetClient::new(&env, &token).mint(&buyer, &2000);
+    let domain = String::from_str(&env, "example.stellar");
+
+    let id = client.create_escrow(&buyer, &seller, &token, &1000, &domain);
+
+    client.pause_escrow_creation();
+    assert!(client.is_creation_paused());
+    assert_eq!(
+        client.try_create_escrow(&buyer, &seller, &token, &1000, &domain),
+        Err(Ok(crate::errors::Error::CreationPaused))
+    );
+
+    // existing escrows still settle while paused
+    client.confirm_receipt(&id);
+    assert_eq!(client.get_escrow(&id).status, EscrowStatus::Released);
+
+    client.resume_escrow_creation();
+    assert!(!client.is_creation_paused());
+    assert_eq!(client.create_escrow(&buyer, &seller, &token, &1000, &domain), 2);
+}
+
+#[test]
+fn test_pause_non_admin_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let client = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    env.mock_all_auths();
+    client.initialize(&admin, &admin, &admin, &250);
+    env.set_auths(&[]);
+
+    assert!(client.try_pause_escrow_creation().is_err());
+    assert!(client.try_resume_escrow_creation().is_err());
+}

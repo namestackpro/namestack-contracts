@@ -65,6 +65,9 @@ impl EscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
+        if Self::is_creation_paused(env.clone()) {
+            return Err(Error::CreationPaused);
+        }
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -277,6 +280,40 @@ impl EscrowContract {
             .set(&DataKey::Arbitrator, &new_arbitrator);
         Self::bump_instance(&env);
 
+        Ok(())
+    }
+
+    /// Admin-only: block new escrows. Existing escrows can still be
+    /// confirmed, disputed and resolved.
+    pub fn pause_escrow_creation(env: Env) -> Result<(), Error> {
+        Self::set_creation_paused(&env, true)
+    }
+
+    /// Admin-only: allow new escrows again.
+    pub fn resume_escrow_creation(env: Env) -> Result<(), Error> {
+        Self::set_creation_paused(&env, false)
+    }
+
+    pub fn is_creation_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::CreationPaused)
+            .unwrap_or(false)
+    }
+
+    fn set_creation_paused(env: &Env, paused: bool) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::CreationPaused, &paused);
+        Self::bump_instance(env);
+        events::creation_paused(env, paused);
         Ok(())
     }
 

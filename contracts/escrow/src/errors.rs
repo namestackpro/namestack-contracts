@@ -14,4 +14,5 @@ pub enum Error {
     InvalidAmount = 8,
     InvalidFee = 9,
     InvalidParties = 10,
+    CreationPaused = 11,
 }
