@@ -11,4 +11,7 @@ pub enum Error {
     Unauthorized = 5,
     InvalidReleaseTarget = 6,
     Overflow = 7,
+    InvalidAmount = 8,
+    InvalidFee = 9,
+    InvalidParties = 10,
 }
