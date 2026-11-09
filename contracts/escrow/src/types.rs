@@ -8,6 +8,7 @@ pub enum DataKey {
     FeeBps,
     EscrowCount,
     Escrow(u64),
+    CreationPaused,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]

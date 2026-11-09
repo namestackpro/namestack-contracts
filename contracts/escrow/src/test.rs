@@ -474,3 +474,158 @@ fn test_set_arbitrator_non_admin_fails() {
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin, &arbitrator, &fee_address, &250);
 }
+
+#[test]
+fn test_create_escrow_zero_amount_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+
+    let result = client.try_create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &0,
+        &String::from_str(&env, "example.stellar"),
+    );
+    assert_eq!(result, Err(Ok(crate::errors::Error::InvalidAmount)));
+}
+
+#[test]
+fn test_create_escrow_buyer_is_seller_fails() {
+    let (env, contract_id, admin, _arbitrator, buyer, _seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+    token::StellarAssetClient::new(&env, &token).mint(&buyer, &1000);
+
+    let result = client.try_create_escrow(
+        &buyer,
+        &buyer,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+    assert_eq!(result, Err(Ok(crate::errors::Error::InvalidParties)));
+}
+
+#[test]
+fn test_create_escrow_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let seller = Address::generate(&env);
+    let client = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    let token = create_token(&env, &admin);
+
+    let result = client.try_create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+    assert_eq!(result, Err(Ok(crate::errors::Error::NotInitialized)));
+}
+
+#[test]
+fn test_fee_above_100_percent_rejected() {
+    let (env, contract_id, _admin, _arbitrator, _buyer, _seller, fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    assert_eq!(
+        client.try_set_fee(&10_001, &fee_address),
+        Err(Ok(crate::errors::Error::InvalidFee))
+    );
+
+    let fresh = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    assert_eq!(
+        fresh.try_initialize(&fee_address, &fee_address, &fee_address, &10_001),
+        Err(Ok(crate::errors::Error::InvalidFee))
+    );
+}
+
+#[test]
+fn test_confirm_receipt_zero_fee_pays_seller_in_full() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    client.set_fee(&0, &fee_address);
+    let token = create_token(&env, &admin);
+    token::StellarAssetClient::new(&env, &token).mint(&buyer, &1000);
+
+    let id = client.create_escrow(
+        &buyer,
+        &seller,
+        &token,
+        &1000,
+        &String::from_str(&env, "example.stellar"),
+    );
+    client.confirm_receipt(&id);
+
+    let tc = token::Client::new(&env, &token);
+    assert_eq!(tc.balance(&seller), 1000);
+    assert_eq!(tc.balance(&fee_address), 0);
+}
+
+#[test]
+fn test_config_getters() {
+    let (env, contract_id, admin, arbitrator, _buyer, _seller, fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_arbitrator(), arbitrator);
+    assert_eq!(client.get_fee_config(), (fee_address, 250));
+
+    let new_arb = Address::generate(&env);
+    client.set_arbitrator(&new_arb);
+    assert_eq!(client.get_arbitrator(), new_arb);
+}
+
+#[test]
+fn test_config_getters_uninitialized_fail() {
+    let env = Env::default();
+    let client = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    let not_init = Err(Ok(crate::errors::Error::NotInitialized));
+
+    assert_eq!(client.try_get_admin().map(|_| ()), not_init);
+    assert_eq!(client.try_get_arbitrator().map(|_| ()), not_init);
+    assert_eq!(client.try_get_fee_config().map(|_| ()), not_init);
+}
+
+#[test]
+fn test_pause_blocks_creation_only() {
+    let (env, contract_id, admin, _arbitrator, buyer, seller, _fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token = create_token(&env, &admin);
+    token::StellarAssetClient::new(&env, &token).mint(&buyer, &2000);
+    let domain = String::from_str(&env, "example.stellar");
+
+    let id = client.create_escrow(&buyer, &seller, &token, &1000, &domain);
+
+    client.pause_escrow_creation();
+    assert!(client.is_creation_paused());
+    assert_eq!(
+        client.try_create_escrow(&buyer, &seller, &token, &1000, &domain),
+        Err(Ok(crate::errors::Error::CreationPaused))
+    );
+
+    // existing escrows still settle while paused
+    client.confirm_receipt(&id);
+    assert_eq!(client.get_escrow(&id).status, EscrowStatus::Released);
+
+    client.resume_escrow_creation();
+    assert!(!client.is_creation_paused());
+    assert_eq!(client.create_escrow(&buyer, &seller, &token, &1000, &domain), 2);
+}
+
+#[test]
+fn test_pause_non_admin_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let client = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    env.mock_all_auths();
+    client.initialize(&admin, &admin, &admin, &250);
+    env.set_auths(&[]);
+
+    assert!(client.try_pause_escrow_creation().is_err());
+    assert!(client.try_resume_escrow_creation().is_err());
+}

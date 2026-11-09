@@ -38,3 +38,7 @@ pub fn dispute_resolved(env: &Env, escrow_id: u64, release_to: &Address, resulti
         (escrow_id, release_to, resulting_status),
     );
 }
+
+pub fn creation_paused(env: &Env, paused: bool) {
+    env.events().publish(("creation_paused",), paused);
+}

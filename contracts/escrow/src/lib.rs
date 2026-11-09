@@ -14,6 +14,7 @@ use types::{DataKey, Escrow, EscrowStatus};
 
 const TTL_THRESHOLD: u32 = 86400;
 const TTL_EXTEND_TO: u32 = 518400;
+const MAX_FEE_BPS: u32 = 10_000;
 
 #[contract]
 pub struct EscrowContract;
@@ -31,6 +32,9 @@ impl EscrowContract {
             return Err(Error::AlreadyInitialized);
         }
         admin.require_auth();
+        if fee_bps > MAX_FEE_BPS {
+            return Err(Error::InvalidFee);
+        }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -43,6 +47,7 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::EscrowCount, &0u64);
+        Self::bump_instance(&env);
 
         Ok(())
     }
@@ -56,6 +61,19 @@ impl EscrowContract {
         domain_ref: String,
     ) -> Result<u64, Error> {
         buyer.require_auth();
+
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        if Self::is_creation_paused(env.clone()) {
+            return Err(Error::CreationPaused);
+        }
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        if buyer == seller {
+            return Err(Error::InvalidParties);
+        }
 
         let mut escrow_count: u64 = env
             .storage()
@@ -88,6 +106,7 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::EscrowCount, &escrow_id);
+        Self::bump_instance(&env);
 
         events::escrow_created(&env, escrow_id, &buyer, &seller, amount, &domain_ref);
 
@@ -99,6 +118,35 @@ impl EscrowContract {
             .persistent()
             .get(&DataKey::Escrow(escrow_id))
             .ok_or(Error::EscrowNotFound)
+    }
+
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)
+    }
+
+    pub fn get_arbitrator(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns `(fee_address, fee_bps)`.
+    pub fn get_fee_config(env: Env) -> Result<(Address, u32), Error> {
+        let fee_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeAddress)
+            .ok_or(Error::NotInitialized)?;
+        let fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeBps)
+            .ok_or(Error::NotInitialized)?;
+        Ok((fee_address, fee_bps))
     }
 
     pub fn confirm_receipt(env: Env, escrow_id: u64) -> Result<(), Error> {
@@ -114,40 +162,7 @@ impl EscrowContract {
             return Err(Error::InvalidStatus);
         }
 
-        let fee_bps: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeBps)
-            .unwrap_or(0);
-        let fee_address: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeAddress)
-            .unwrap();
-
-        let fee_amount = Self::amount_to_fee(escrow.amount, fee_bps)?;
-        let seller_amount = escrow
-            .amount
-            .checked_sub(fee_amount)
-            .ok_or(Error::Overflow)?;
-
-        let token_client = TokenClient::new(&env, &escrow.token);
-        token_client.transfer(&env.current_contract_address(), &fee_address, &fee_amount);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &escrow.seller,
-            &seller_amount,
-        );
-
-        escrow.status = EscrowStatus::Released;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(escrow_id), &escrow);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
-
-        events::escrow_released(&env, escrow_id, &escrow.seller, seller_amount, fee_amount);
+        Self::release_to_seller(&env, escrow_id, &mut escrow)?;
 
         Ok(())
     }
@@ -205,44 +220,7 @@ impl EscrowContract {
         }
 
         if release_to == escrow.seller {
-            let fee_bps: u32 = env
-                .storage()
-                .instance()
-                .get(&DataKey::FeeBps)
-                .unwrap_or(0);
-            let fee_address: Address = env
-                .storage()
-                .instance()
-                .get(&DataKey::FeeAddress)
-                .unwrap();
-
-            let fee_amount = Self::amount_to_fee(escrow.amount, fee_bps)?;
-            let seller_amount = escrow
-                .amount
-                .checked_sub(fee_amount)
-                .ok_or(Error::Overflow)?;
-
-            let token_client = TokenClient::new(&env, &escrow.token);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &fee_address,
-                &fee_amount,
-            );
-            token_client.transfer(
-                &env.current_contract_address(),
-                &escrow.seller,
-                &seller_amount,
-            );
-
-            escrow.status = EscrowStatus::Released;
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(escrow_id), &escrow);
-            env.storage()
-                .persistent()
-                .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
-
-            events::escrow_released(&env, escrow_id, &escrow.seller, seller_amount, fee_amount);
+            Self::release_to_seller(&env, escrow_id, &mut escrow)?;
             events::dispute_resolved(&env, escrow_id, &release_to, EscrowStatus::Released);
         } else {
             let token_client = TokenClient::new(&env, &escrow.token);
@@ -274,6 +252,9 @@ impl EscrowContract {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
+        if fee_bps > MAX_FEE_BPS {
+            return Err(Error::InvalidFee);
+        }
 
         env.storage()
             .instance()
@@ -281,6 +262,7 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::FeeAddress, &fee_address);
+        Self::bump_instance(&env);
 
         Ok(())
     }
@@ -296,8 +278,89 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::Arbitrator, &new_arbitrator);
+        Self::bump_instance(&env);
 
         Ok(())
+    }
+
+    /// Admin-only: block new escrows. Existing escrows can still be
+    /// confirmed, disputed and resolved.
+    pub fn pause_escrow_creation(env: Env) -> Result<(), Error> {
+        Self::set_creation_paused(&env, true)
+    }
+
+    /// Admin-only: allow new escrows again.
+    pub fn resume_escrow_creation(env: Env) -> Result<(), Error> {
+        Self::set_creation_paused(&env, false)
+    }
+
+    pub fn is_creation_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::CreationPaused)
+            .unwrap_or(false)
+    }
+
+    fn set_creation_paused(env: &Env, paused: bool) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::CreationPaused, &paused);
+        Self::bump_instance(env);
+        events::creation_paused(env, paused);
+        Ok(())
+    }
+
+    /// Pays the seller (minus the platform fee) and marks the escrow Released.
+    fn release_to_seller(env: &Env, escrow_id: u64, escrow: &mut Escrow) -> Result<(), Error> {
+        let fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeBps)
+            .unwrap_or(0);
+        let fee_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeAddress)
+            .ok_or(Error::NotInitialized)?;
+
+        let fee_amount = Self::amount_to_fee(escrow.amount, fee_bps)?;
+        let seller_amount = escrow
+            .amount
+            .checked_sub(fee_amount)
+            .ok_or(Error::Overflow)?;
+
+        let token_client = TokenClient::new(env, &escrow.token);
+        let contract = env.current_contract_address();
+        if fee_amount > 0 {
+            token_client.transfer(&contract, &fee_address, &fee_amount);
+        }
+        token_client.transfer(&contract, &escrow.seller, &seller_amount);
+
+        escrow.status = EscrowStatus::Released;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(escrow_id), escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Escrow(escrow_id), TTL_THRESHOLD, TTL_EXTEND_TO);
+        Self::bump_instance(env);
+
+        events::escrow_released(env, escrow_id, &escrow.seller, seller_amount, fee_amount);
+        Ok(())
+    }
+
+    /// Keeps contract config (admin, fee, counter) from expiring.
+    fn bump_instance(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
     }
 
     fn amount_to_fee(amount: i128, fee_bps: u32) -> Result<i128, Error> {
