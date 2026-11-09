@@ -117,6 +117,35 @@ impl EscrowContract {
             .ok_or(Error::EscrowNotFound)
     }
 
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)
+    }
+
+    pub fn get_arbitrator(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns `(fee_address, fee_bps)`.
+    pub fn get_fee_config(env: Env) -> Result<(Address, u32), Error> {
+        let fee_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeAddress)
+            .ok_or(Error::NotInitialized)?;
+        let fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeBps)
+            .ok_or(Error::NotInitialized)?;
+        Ok((fee_address, fee_bps))
+    }
+
     pub fn confirm_receipt(env: Env, escrow_id: u64) -> Result<(), Error> {
         let mut escrow: Escrow = env
             .storage()

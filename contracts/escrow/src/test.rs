@@ -565,3 +565,28 @@ fn test_confirm_receipt_zero_fee_pays_seller_in_full() {
     assert_eq!(tc.balance(&seller), 1000);
     assert_eq!(tc.balance(&fee_address), 0);
 }
+
+#[test]
+fn test_config_getters() {
+    let (env, contract_id, admin, arbitrator, _buyer, _seller, fee_address) = setup_test();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_arbitrator(), arbitrator);
+    assert_eq!(client.get_fee_config(), (fee_address, 250));
+
+    let new_arb = Address::generate(&env);
+    client.set_arbitrator(&new_arb);
+    assert_eq!(client.get_arbitrator(), new_arb);
+}
+
+#[test]
+fn test_config_getters_uninitialized_fail() {
+    let env = Env::default();
+    let client = EscrowContractClient::new(&env, &env.register(EscrowContract, ()));
+    let not_init = Err(Ok(crate::errors::Error::NotInitialized));
+
+    assert_eq!(client.try_get_admin().map(|_| ()), not_init);
+    assert_eq!(client.try_get_arbitrator().map(|_| ()), not_init);
+    assert_eq!(client.try_get_fee_config().map(|_| ()), not_init);
+}
