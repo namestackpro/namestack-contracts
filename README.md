@@ -33,6 +33,14 @@ Questions or security concerns: open an issue, or reach out on Discord.
 3. If either party disputes, `raise_dispute` freezes the escrow. An arbitrator then
    calls `resolve_dispute` to release funds to either party.
 
+Admin and read-only functions:
+
+| Function | Who | Purpose |
+|---|---|---|
+| `set_fee`, `set_arbitrator` | admin | Update config (`fee_bps` capped at 10 000) |
+| `pause_escrow_creation`, `resume_escrow_creation` | admin | Emergency stop for new escrows; existing ones still settle |
+| `get_escrow`, `get_admin`, `get_arbitrator`, `get_fee_config`, `is_creation_paused` | anyone | Read state |
+
 See [`contracts/escrow/src/lib.rs`](contracts/escrow/src/lib.rs) for the full
 function signatures and [`SECURITY.md`](SECURITY.md) for audit status.
 
@@ -105,7 +113,7 @@ stellar contract invoke \
   --fee_bps 100
 ```
 
-`fee_bps` is in basis points — `100` = 1%.
+`fee_bps` is in basis points — `100` = 1%. Values above `10000` are rejected.
 
 The currently deployed testnet contract address is in the
 [latest release](../../releases/latest).
